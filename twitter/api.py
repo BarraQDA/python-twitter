@@ -69,6 +69,8 @@ from twitter.error import (
     PythonTwitterDeprecationWarning330,
 )
 
+if sys.version_info > (3,):
+    long = int
 
 CHARACTER_LIMIT = 140
 
@@ -292,14 +294,14 @@ class Api(object):
 
         key = quote_plus(consumer_key)
         secret = quote_plus(consumer_secret)
-        bearer_token = base64.b64encode('{}:{}'.format(key, secret) )
+        bearer_token = base64.b64encode('{}:{}'.format(key, secret))
 
         post_headers = {
-            'Authorization': 'Basic '+bearer_token,
+            'Authorization': 'Basic ' + bearer_token,
             'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
         }
         res = requests.post(url='https://api.twitter.com/oauth2/token',
-                            data={'grant_type':'client_credentials'},
+                            data={'grant_type': 'client_credentials'},
                             headers=post_headers)
         bearer_creds = res.json()
         return bearer_creds
@@ -975,7 +977,7 @@ class Api(object):
                 raise TwitterError({'message': "'lang' should be string instance"})
             parameters['lang'] = lang
 
-        resp = self._RequestUrl(request_url, 'GET', data=parameters)
+        resp = self._RequestUrl(request_url, 'GET', data=parameters, enforce_auth=False)
         data = self._ParseAndCheckTwitter(resp.content.decode('utf-8'))
 
         return data
@@ -1117,19 +1119,19 @@ class Api(object):
         if media:
             chunked_types = ['video/mp4', 'video/quicktime', 'image/gif']
             media_ids = []
-            if isinstance(media, int):
+            if isinstance(media, (int, long)):
                 media_ids.append(media)
 
             elif isinstance(media, list):
                 for media_file in media:
 
                     # If you want to pass just a media ID, it should be an int
-                    if isinstance(media_file, int):
+                    if isinstance(media_file, (int, long)):
                         media_ids.append(media_file)
                         continue
 
                     _, _, file_size, media_type = parse_media_file(media_file)
-                    if media_type == 'image/gif' or media_type == 'video/mp4':
+                    if (media_type == 'image/gif' or media_type == 'video/mp4') and len(media) > 1:
                         raise TwitterError(
                             'You cannot post more than 1 GIF or 1 video in a single status.')
                     if file_size > self.chunk_size or media_type in chunked_types:
@@ -4601,7 +4603,8 @@ class Api(object):
                         locations=None,
                         languages=None,
                         delimited=None,
-                        stall_warnings=None):
+                        stall_warnings=None,
+                        filter_level=None):
         """Returns a filtered view of public statuses.
 
         Args:
@@ -4620,6 +4623,9 @@ class Api(object):
             A list of Languages.
             Will only return Tweets that have been detected as being
             written in the specified languages. [Optional]
+          filter_level:
+            Specifies level of filtering applied to stream.
+            Set to None, 'low' or 'medium'. [Optional]
 
         Returns:
           A twitter stream
@@ -4640,6 +4646,8 @@ class Api(object):
             data['stall_warnings'] = str(stall_warnings)
         if languages is not None:
             data['language'] = ','.join(languages)
+        if filter_level is not None:
+            data['filter_level'] = filter_level
 
         resp = self._RequestStream(url, 'POST', data=data)
         for line in resp.iter_lines():
@@ -4654,7 +4662,8 @@ class Api(object):
                       locations=None,
                       delimited=None,
                       stall_warnings=None,
-                      stringify_friend_ids=False):
+                      stringify_friend_ids=False,
+                      filter_level=None):
         """Returns the data from the user stream.
 
         Args:
@@ -4676,6 +4685,9 @@ class Api(object):
           stringify_friend_ids:
             Specifies whether to send the friends list preamble as an array of
             integers or an array of strings. [Optional]
+          filter_level:
+            Specifies level of filtering applied to stream.
+            Set to None, low or medium. [Optional]
 
         Returns:
           A twitter stream
@@ -4696,6 +4708,8 @@ class Api(object):
             data['delimited'] = str(delimited)
         if stall_warnings is not None:
             data['stall_warnings'] = str(stall_warnings)
+        if filter_level is not None:
+            data['filter_level'] = filter_level
 
         resp = self._RequestStream(url, 'POST', data=data)
         for line in resp.iter_lines():
@@ -4969,7 +4983,7 @@ class Api(object):
         except requests.RequestException as e:
             raise TwitterError(str(e))
 
-    def _RequestUrl(self, url, verb, data=None, json=None):
+    def _RequestUrl(self, url, verb, data=None, json=None, enforce_auth=True):
         """Request a url.
 
         Args:
@@ -4983,17 +4997,19 @@ class Api(object):
         Returns:
             A JSON object.
         """
-        if not self.__auth:
-            raise TwitterError("The twitter.Api instance must be authenticated.")
+        if enforce_auth:
+            if not self.__auth:
+                raise TwitterError("The twitter.Api instance must be authenticated.")
 
-        if url and self.sleep_on_rate_limit:
-            limit = self.CheckRateLimit(url)
+            if url and self.sleep_on_rate_limit:
+                limit = self.CheckRateLimit(url)
 
-            if limit.remaining == 0:
-                try:
-                    time.sleep(max(int(limit.reset - time.time()) + 2, 0))
-                except ValueError:
-                    pass
+                if limit.remaining == 0:
+                    try:
+                        time.sleep(max(int(limit.reset - time.time()) + 2, 0))
+                    except ValueError:
+                        pass
+
         if not data:
             data = {}
 
