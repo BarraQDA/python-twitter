@@ -120,6 +120,7 @@ class Api(object):
         >>> api.PostUpdates(status)
         >>> api.PostDirectMessage(user, text)
         >>> api.GetUser(user)
+        >>> api.GetProfileBanner(user)
         >>> api.GetReplies()
         >>> api.GetUserTimeline(user)
         >>> api.GetHomeTimeline()
@@ -2985,6 +2986,35 @@ class Api(object):
         data = self._ParseAndCheckTwitter(resp.content.decode('utf-8'))
 
         return User.NewFromJsonDict(data)
+
+    def GetProfileBanner(self,
+                user_id=None,
+                screen_name=None):
+        """Returns profile banner information for a user.
+
+        Args:
+          user_id (int, optional):
+            The id of the user to retrieve profile banner.
+          screen_name (str, optional):
+            The screen name of the user for whom to return results for.
+            Either a user_id or screen_name is required for this method.
+
+        Returns:
+          A dictionary with banner sizes as keys and URLs as values
+        """
+        url = '%s/users/profile_banner.json' % (self.base_url)
+        parameters = {}
+        if user_id:
+            parameters['user_id'] = user_id
+        elif screen_name:
+            parameters['screen_name'] = screen_name
+        else:
+            raise TwitterError("Specify at least one of user_id or screen_name.")
+
+        resp = self._RequestUrl(url, 'GET', data=parameters)
+        data = self._ParseAndCheckTwitter(resp.content.decode('utf-8'))
+
+        return data.get('sizes')
 
     def GetDirectMessages(self,
                           since_id=None,
